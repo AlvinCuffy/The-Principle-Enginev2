@@ -25,3 +25,16 @@ export enum AppState {
   ERROR = 'ERROR',
   NO_MATCH = 'NO_MATCH',
 }
+
+export interface VaultItem {
+  id: string;
+  category: string;
+  corePrinciple: string;
+  unlockedAt: string;
+}
+
+export interface UserProfile {
+  name: string;
+  title: string;
+  joinedAt: string;
+}

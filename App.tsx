@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { fetchPrinciple, generateBlueprint, BlueprintResponse } from './services/geminiService';
-import { PrincipleResponse, AppState } from './types';
+import { PrincipleResponse, AppState, VaultItem, UserProfile } from './types';
 import { Loader } from './components/Loader';
 import { ResultsDisplay } from './components/ResultsDisplay';
+import { ServiceRecord } from './components/ServiceRecord';
 
-type NavTab = 'ENGINE' | 'BLUEPRINT' | 'HUB';
+type NavTab = 'ENGINE' | 'BLUEPRINT' | 'HUB' | 'RECORD';
 
 const App: React.FC = () => {
   // Navigation State
@@ -17,6 +18,13 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState({ actions: 0, unlocked: 0 });
 
+  // Vault State
+  const [showVault, setShowVault] = useState(false);
+  const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
+
+  // Profile State
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
   // Blueprint Logic State
   const [bpInputs, setBpInputs] = useState({ burden: '', hand: '', history: '' });
   const [bpLoading, setBpLoading] = useState(false);
@@ -26,33 +34,73 @@ const App: React.FC = () => {
   const [email, setEmail] = useState('');
   const [hubSubmitted, setHubSubmitted] = useState(false);
 
-  // Load Dashboard Stats
+  // Load Data on Mount & Updates
   useEffect(() => {
-    if (activeNav === 'ENGINE') {
-      const actions = parseInt(localStorage.getItem('tpe_stats_actions') || '0');
-      // Count total principles visited by checking keys
-      let unlocked = 0;
-      for(let i=0; i<localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if(key && key.startsWith('tpe_progress_')) {
-              unlocked++;
-          }
-      }
-      setStats({ actions, unlocked });
+    // Load Profile
+    const savedProfile = localStorage.getItem('tpe_user_profile');
+    if (savedProfile) {
+      setUserProfile(JSON.parse(savedProfile));
     }
-  }, [activeNav]);
 
-  const handleSearch = useCallback(async (e?: React.FormEvent) => {
+    // Load Stats
+    const actions = parseInt(localStorage.getItem('tpe_stats_actions') || '0');
+    let unlocked = 0;
+    for(let i=0; i<localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if(key && key.startsWith('tpe_progress_')) {
+            unlocked++;
+        }
+    }
+    setStats({ actions, unlocked });
+
+    // Load Vault
+    const vaultData = localStorage.getItem('tpe_vault_index');
+    if (vaultData) {
+        setVaultItems(JSON.parse(vaultData));
+    }
+  }, [activeNav, data]); 
+
+  const handleCreateProfile = (name: string, title: string) => {
+    const newProfile: UserProfile = {
+      name,
+      title,
+      joinedAt: new Date().toISOString()
+    };
+    setUserProfile(newProfile);
+    localStorage.setItem('tpe_user_profile', JSON.stringify(newProfile));
+  };
+
+  const saveToVault = (item: PrincipleResponse) => {
+      const newItem: VaultItem = {
+          id: item.id,
+          category: item.category,
+          corePrinciple: item.corePrinciple,
+          unlockedAt: new Date().toISOString()
+      };
+      
+      const currentVault = JSON.parse(localStorage.getItem('tpe_vault_index') || '[]');
+      // Avoid duplicates
+      if (!currentVault.some((v: VaultItem) => v.id === item.id)) {
+          const updatedVault = [newItem, ...currentVault];
+          localStorage.setItem('tpe_vault_index', JSON.stringify(updatedVault));
+          setVaultItems(updatedVault);
+      }
+  };
+
+  const handleSearch = useCallback(async (e?: React.FormEvent, overrideInput?: string) => {
     if (e) e.preventDefault();
-    if (!input.trim()) return;
+    const query = overrideInput || input;
+    if (!query.trim()) return;
 
     setAppState(AppState.LOADING);
+    setShowVault(false); // Close vault on search
     setError(null);
     setData(null);
 
     try {
-      const result = await fetchPrinciple(input);
+      const result = await fetchPrinciple(query);
       setData(result);
+      saveToVault(result); // Save to Vault
       setAppState(AppState.SUCCESS);
     } catch (err: any) {
       if (err.message === "NO_MATCH") {
@@ -72,7 +120,7 @@ const App: React.FC = () => {
         const result = await generateBlueprint(bpInputs.burden, bpInputs.hand, bpInputs.history);
         setBpResult(result);
     } catch (e) {
-        // Handle error silently or show visual feedback
+       // Error handling
     } finally {
         setBpLoading(false);
     }
@@ -82,6 +130,7 @@ const App: React.FC = () => {
     setAppState(AppState.IDLE);
     setInput('');
     setData(null);
+    setShowVault(false);
   };
 
   const handleHubSubmit = (e: React.FormEvent) => {
@@ -105,33 +154,40 @@ const App: React.FC = () => {
         </div>
         
         {/* Navigation Tabs */}
-        <nav className="flex space-x-8">
+        <nav className="flex space-x-4 md:space-x-8 overflow-x-auto w-full md:w-auto">
           <button 
             onClick={() => setActiveNav('ENGINE')}
-            className={`text-xs font-bold tracking-[0.2em] uppercase transition-all relative pb-2 ${activeNav === 'ENGINE' ? 'text-gold' : 'text-white/40 hover:text-white'}`}
+            className={`text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase transition-all relative pb-2 whitespace-nowrap ${activeNav === 'ENGINE' ? 'text-gold' : 'text-white/40 hover:text-white'}`}
           >
             The Engine
             {activeNav === 'ENGINE' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gold animate-tab-transition"></span>}
           </button>
           <button 
             onClick={() => setActiveNav('BLUEPRINT')}
-            className={`text-xs font-bold tracking-[0.2em] uppercase transition-all relative pb-2 ${activeNav === 'BLUEPRINT' ? 'text-gold' : 'text-white/40 hover:text-white'}`}
+            className={`text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase transition-all relative pb-2 whitespace-nowrap ${activeNav === 'BLUEPRINT' ? 'text-gold' : 'text-white/40 hover:text-white'}`}
           >
             The Blueprint
             {activeNav === 'BLUEPRINT' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gold animate-tab-transition"></span>}
           </button>
           <button 
             onClick={() => setActiveNav('HUB')}
-            className={`text-xs font-bold tracking-[0.2em] uppercase transition-all relative pb-2 ${activeNav === 'HUB' ? 'text-gold' : 'text-white/40 hover:text-white'}`}
+            className={`text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase transition-all relative pb-2 whitespace-nowrap ${activeNav === 'HUB' ? 'text-gold' : 'text-white/40 hover:text-white'}`}
           >
             The Hub
             {activeNav === 'HUB' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gold animate-tab-transition"></span>}
+          </button>
+          <button 
+            onClick={() => setActiveNav('RECORD')}
+            className={`text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase transition-all relative pb-2 whitespace-nowrap ${activeNav === 'RECORD' ? 'text-gold' : 'text-white/40 hover:text-white'}`}
+          >
+            The Record
+            {activeNav === 'RECORD' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gold animate-tab-transition"></span>}
           </button>
         </nav>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-grow flex flex-col items-center justify-center px-4 md:px-8 relative w-full max-w-7xl mx-auto min-h-[60vh]">
+      <main className="flex-grow flex flex-col items-center justify-center px-4 md:px-8 relative w-full max-w-7xl mx-auto min-h-[60vh] py-10">
         
         {/* Ambient Background Glow - Consistent across tabs */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gold/5 rounded-full blur-[100px] pointer-events-none"></div>
@@ -140,7 +196,7 @@ const App: React.FC = () => {
         {activeNav === 'ENGINE' && (
           <div key="ENGINE" className="w-full flex flex-col items-center animate-tab-transition">
             {/* Initial State / Search View */}
-            {appState === AppState.IDLE && (
+            {appState === AppState.IDLE && !showVault && (
               <div className="w-full max-w-2xl text-center z-10 mt-10 md:mt-0">
                 <h1 className="text-4xl md:text-6xl font-light text-white mb-4 tracking-tight">
                   Timeless Wisdom <br />
@@ -148,7 +204,7 @@ const App: React.FC = () => {
                 </h1>
                 <div className="w-16 h-1 bg-gold mx-auto my-8"></div>
                 
-                <form onSubmit={handleSearch} className="w-full flex flex-col items-center mb-16">
+                <form onSubmit={(e) => handleSearch(e)} className="w-full flex flex-col items-center mb-16">
                   <input
                     type="text"
                     value={input}
@@ -168,9 +224,12 @@ const App: React.FC = () => {
 
                 {/* DOER'S LEDGER DASHBOARD */}
                 <div className="grid grid-cols-2 gap-8 border-t border-white/10 pt-8 max-w-md mx-auto">
-                   <div className="text-center">
-                       <div className="text-3xl font-light text-gold mb-1">{stats.unlocked}</div>
-                       <div className="text-[10px] uppercase tracking-[0.2em] text-white/40">Archives Unlocked</div>
+                   <div 
+                     className="text-center cursor-pointer group"
+                     onClick={() => setShowVault(true)}
+                   >
+                       <div className="text-3xl font-light text-gold mb-1 group-hover:text-white transition-colors">{vaultItems.length}</div>
+                       <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 group-hover:text-gold transition-colors">Open Vault</div>
                    </div>
                    <div className="text-center border-l border-white/10">
                        <div className="text-3xl font-light text-gold mb-1">{stats.actions}</div>
@@ -178,6 +237,41 @@ const App: React.FC = () => {
                    </div>
                 </div>
               </div>
+            )}
+
+            {/* THE VAULT GALLERY VIEW */}
+            {showVault && (
+               <div className="w-full z-10 animate-fade-in">
+                   <div className="text-center mb-12">
+                       <h2 className="text-3xl font-light text-white mb-4">The Archive Vault</h2>
+                       <button onClick={() => setShowVault(false)} className="text-gold text-xs uppercase tracking-widest hover:text-white transition-colors">← Return to Search</button>
+                   </div>
+                   
+                   {vaultItems.length > 0 ? (
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                           {vaultItems.map((item) => (
+                               <div 
+                                 key={item.id}
+                                 onClick={() => {
+                                     // Hack to re-search specifically for this item without typing
+                                     // In a real app we'd just load by ID, but search works for this demo
+                                     setInput(item.category.split(' ')[0]); // Crude way to re-trigger, ideally we store the exact query or just load data directly
+                                     handleSearch(undefined, item.category); 
+                                 }}
+                                 className="bg-navy-light/20 border border-white/5 p-8 hover:border-gold/30 cursor-pointer transition-all duration-300 hover:bg-navy-light/40 group"
+                               >
+                                   <p className="text-[10px] text-gold uppercase tracking-widest mb-4">{item.category}</p>
+                                   <h3 className="text-white font-light text-lg leading-relaxed group-hover:text-gold transition-colors">
+                                       "{item.corePrinciple}"
+                                   </h3>
+                                   <div className="mt-6 h-0.5 w-8 bg-white/10 group-hover:w-full group-hover:bg-gold transition-all duration-500"></div>
+                               </div>
+                           ))}
+                       </div>
+                   ) : (
+                       <div className="text-center text-white/40 py-20">The Vault is empty. Begin your search to collect wisdom.</div>
+                   )}
+               </div>
             )}
 
             {/* Loading State */}
@@ -198,7 +292,7 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* No Match / General Wisdom Fallback State (Actually, this shouldn't trigger often with Hybrid AI) */}
+            {/* No Match / General Wisdom Fallback State */}
             {appState === AppState.NO_MATCH && (
               <div className="text-center animate-fade-in z-10 max-w-lg mt-10 md:mt-0">
                  <h3 className="text-gold text-xl font-light mb-4">Wisdom is seeking.</h3>
@@ -229,56 +323,72 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: THE BLUEPRINT (Updated with Form) */}
+        {/* TAB 2: THE BLUEPRINT (Updated with Detailed Form) */}
         {activeNav === 'BLUEPRINT' && (
-          <div key="BLUEPRINT" className="w-full flex flex-col items-center animate-tab-transition z-10 max-w-3xl">
+          <div key="BLUEPRINT" className="w-full flex flex-col items-center animate-tab-transition z-10 max-w-4xl">
              <h2 className="text-3xl md:text-5xl font-light text-white mb-4 leading-tight text-center">
                The Principle of Purpose
              </h2>
              <div className="w-16 h-1 bg-gold mx-auto mb-12"></div>
 
              {!bpResult ? (
-                 <form onSubmit={handleBlueprintSubmit} className="w-full space-y-8 animate-fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="space-y-2">
-                            <label className="text-gold text-xs font-bold tracking-widest uppercase">The Burden</label>
-                            <p className="text-[10px] text-white/40">What problem breaks your heart?</p>
-                            <textarea 
-                                required
-                                className="w-full bg-navy-dark/50 border border-white/20 rounded-sm p-4 text-white focus:border-gold outline-none h-32 resize-none"
-                                placeholder="e.g., Seeing fathers disconnect from their children..."
-                                value={bpInputs.burden}
-                                onChange={e => setBpInputs({...bpInputs, burden: e.target.value})}
-                            />
+                 <form onSubmit={handleBlueprintSubmit} className="w-full space-y-12 animate-fade-in">
+                    {/* Field 1: The Burden */}
+                    <div className="space-y-4">
+                        <div className="border-l-2 border-gold pl-6">
+                            <label className="block text-gold text-lg font-serif italic mb-2">I. Identify the Sacred Burden</label>
+                            <p className="text-white/60 text-sm font-light leading-relaxed max-w-2xl">
+                                What problem do you *hate* seeing in the world? Your greatest opportunity lies where you feel the greatest anger or pain for others.
+                            </p>
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-gold text-xs font-bold tracking-widest uppercase">The Hand</label>
-                            <p className="text-[10px] text-white/40">What skill is currently in your hand?</p>
-                             <textarea 
-                                required
-                                className="w-full bg-navy-dark/50 border border-white/20 rounded-sm p-4 text-white focus:border-gold outline-none h-32 resize-none"
-                                placeholder="e.g., Graphic design, listening, logistics..."
-                                value={bpInputs.hand}
-                                onChange={e => setBpInputs({...bpInputs, hand: e.target.value})}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-gold text-xs font-bold tracking-widest uppercase">The History</label>
-                            <p className="text-[10px] text-white/40">What have you survived/mastered?</p>
-                             <textarea 
-                                required
-                                className="w-full bg-navy-dark/50 border border-white/20 rounded-sm p-4 text-white focus:border-gold outline-none h-32 resize-none"
-                                placeholder="e.g., 10 years of corporate management..."
-                                value={bpInputs.history}
-                                onChange={e => setBpInputs({...bpInputs, history: e.target.value})}
-                            />
-                        </div>
+                        <textarea 
+                            required
+                            className="w-full bg-navy-dark/50 border border-white/10 rounded-sm p-6 text-white text-lg font-light focus:border-gold outline-none h-32 resize-none transition-all"
+                            placeholder="e.g., I hate seeing good people fall for financial scams..."
+                            value={bpInputs.burden}
+                            onChange={e => setBpInputs({...bpInputs, burden: e.target.value})}
+                        />
                     </div>
-                    <div className="text-center pt-6">
+
+                    {/* Field 2: The Hand */}
+                    <div className="space-y-4">
+                        <div className="border-l-2 border-gold pl-6">
+                            <label className="block text-gold text-lg font-serif italic mb-2">II. Inventory the Asset</label>
+                            <p className="text-white/60 text-sm font-light leading-relaxed max-w-2xl">
+                                What skill, talent, or unique experience has God put in your hand? Your gift makes room for you.
+                            </p>
+                        </div>
+                         <textarea 
+                            required
+                            className="w-full bg-navy-dark/50 border border-white/10 rounded-sm p-6 text-white text-lg font-light focus:border-gold outline-none h-32 resize-none transition-all"
+                            placeholder="e.g., I am a masterful communicator, or, I have deep experience in construction..."
+                            value={bpInputs.hand}
+                            onChange={e => setBpInputs({...bpInputs, hand: e.target.value})}
+                        />
+                    </div>
+
+                    {/* Field 3: The History */}
+                    <div className="space-y-4">
+                        <div className="border-l-2 border-gold pl-6">
+                            <label className="block text-gold text-lg font-serif italic mb-2">III. Validate the Story</label>
+                            <p className="text-white/60 text-sm font-light leading-relaxed max-w-2xl">
+                                What personal history, failure, or survival story gives you the authority to speak on this topic?
+                            </p>
+                        </div>
+                         <textarea 
+                            required
+                            className="w-full bg-navy-dark/50 border border-white/10 rounded-sm p-6 text-white text-lg font-light focus:border-gold outline-none h-32 resize-none transition-all"
+                            placeholder="e.g., I survived a major business failure and rebuilt my finances from scratch..."
+                            value={bpInputs.history}
+                            onChange={e => setBpInputs({...bpInputs, history: e.target.value})}
+                        />
+                    </div>
+
+                    <div className="text-center pt-8 pb-12">
                         {bpLoading ? (
-                            <div className="text-gold animate-pulse text-xs tracking-widest uppercase">Drafting Blueprint...</div>
+                            <div className="text-gold animate-pulse text-sm tracking-[0.3em] uppercase">Constructing Blueprint...</div>
                         ) : (
-                            <button type="submit" className="bg-gold hover:bg-gold-light text-navy font-bold py-3 px-10 text-xs uppercase tracking-[0.2em] transition-all">
+                            <button type="submit" className="bg-gold hover:bg-gold-light text-navy font-bold py-4 px-16 text-sm uppercase tracking-[0.25em] transition-all transform hover:scale-105 shadow-[0_0_30px_rgba(212,175,55,0.2)]">
                                 Construct Blueprint
                             </button>
                         )}
@@ -293,7 +403,7 @@ const App: React.FC = () => {
                      <div className="text-left max-w-xl mx-auto">
                          <h4 className="text-white/50 text-[10px] uppercase tracking-widest mb-4 text-center">Strategic Execution Steps</h4>
                          <ul className="space-y-4">
-                             {bpResult.executionSteps.map((step, i) => (
+                             {bpResult.executionSteps?.map((step, i) => (
                                  <li key={i} className="flex items-start gap-4 text-white/80 font-light">
                                      <span className="text-gold font-bold">0{i+1}</span>
                                      <span>{step}</span>
@@ -360,6 +470,17 @@ const App: React.FC = () => {
                 </div>
              )}
           </div>
+        )}
+
+        {/* TAB 4: THE RECORD (PROFILE) */}
+        {activeNav === 'RECORD' && (
+            <div key="RECORD" className="w-full flex flex-col items-center animate-tab-transition z-10">
+                <ServiceRecord 
+                    profile={userProfile} 
+                    onCreateProfile={handleCreateProfile}
+                    stats={stats}
+                />
+            </div>
         )}
 
       </main>
