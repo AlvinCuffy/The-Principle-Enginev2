@@ -141,18 +141,21 @@ export const fetchPrinciple = async (query: string): Promise<PrincipleResponse> 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `User Query: "${query}".
-      
-      Task: Act as "The Principle Engine". Extract a timeless, sacred minimalist principle for this challenge.
-      
-      Guidelines:
-      1. Tone: High-level executive wisdom. Universal truth. Serious, elite, "Sacred Minimalist".
-      2. Core Principle: One powerful sentence. No religious jargon, but spiritually rooted.
-      3. Source: Cite a specific Bible verse (Book Chapter:Verse) that supports this truth.
-      4. Action Plan: 7 actionable, practical steps to solve the problem. "Doer" focused.
-      5. Related Questions: 3 common follow-up questions and 1-sentence wise answers.
-      6. Additional Scriptures: 2 more supporting verses.
-      
-      Output strictly as JSON matching the schema.`,
+
+Role: You are the "Principle Engine," an ancient strategy system for Kingdom Leaders.
+Goal: Convert the user's vague problem into a strict Military/Executive Protocol based on Scripture.
+
+JSON Requirements:
+1. category: High-level tactical domain (e.g., "WARFARE", "ASSET MANAGEMENT", "FAMILY GOVERNANCE").
+2. corePrinciple: A brutal truth. Short. Punchy. (e.g., "Do not confuse patience with cowardice.")
+3. sourceReference: One specific verse.
+4. actionPlan: 7 Chronological Steps. 
+   - Steps 1-2: Immediate triage (Stop the bleeding).
+   - Steps 3-5: Strategic implementation (Build the solution).
+   - Steps 6-7: Long-term fortification (Prevent recurrence).
+   Start every step with a VERB (e.g., "Audit," "Confront," "Sever," "Invest").
+
+Output strictly as JSON.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
